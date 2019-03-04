@@ -3,9 +3,12 @@
   gather_facts: no
 
   vars:
-    alarm_filepath: /tmp/hc2_alarm_latest.tar.gz
+    alarm_image_name: hc2_alarm_latest.tar.gz
+    alarm_filepath: /tmp/{{alarm_image_name}}
     alarm_url: https://archlinuxarm.org/os/ArchLinuxARM-odroid-xu3-latest.tar.gz
     ssh_keys: "{{users.beinke.ssh_keys}}"
+    alarm_gpg_fingerprint: 68B3537F39A313B3E574D06777193F152BDBE6A6
+    alarm_gpg_keyring: ~/.gnupg/keyring_alarm.gpg
 
   vars_prompt:
   - name: sdcard
@@ -53,12 +56,23 @@
       warn: no
     become: yes
 
-  - name: Download the ArchLinux ARM image
-    get_url:
-      url: "{{alarm_url}}"
-      dest: "{{alarm_filepath}}"
+  - name: Download the gpg key for verification of the alarm image
+    command: gpg --no-default-keyring --keyring {{alarm_gpg_keyring}} --receive-keys {{alarm_gpg_fingerprint}}
+    args:
+      creates: "{{alarm_gpg_keyring}}"
 
-  # TODO: verify ArchLinux ARM image
+  - name: Download the ArchLinux ARM image
+    shell: |
+      set -e
+      tmp=`mktemp --directory`
+      cd $tmp
+      trap "cd /tmp; rm $tmp/{{alarm_image_name}}; rm $tmp/{{alarm_image_name}}.sig; rmdir $tmp" EXIT
+      wget --no-verbose -O "{{alarm_image_name}}" "{{alarm_url}}"
+      wget --no-verbose -O "{{alarm_image_name}}.sig" "{{alarm_url}}.sig"
+      gpg --no-default-keyring --keyring {{alarm_gpg_keyring}} --verify "{{alarm_image_name}}.sig"
+      cp "{{alarm_image_name}}" "{{alarm_filepath}}"
+    args:
+      creates: "{{alarm_filepath}}"
 
   - name: Untar the ArchLinux ARM image
     unarchive:
